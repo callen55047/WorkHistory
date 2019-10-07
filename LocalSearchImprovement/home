@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <script src=""></script>
+    <title>Local Search</title>
+
+    <style>
+
+        .title {
+            margin: auto;
+            width: 75%;
+            border-radius: 5px solid red;
+            padding: 10px;
+            text-align: center;
+        }
+    
+        .content {
+            margin: auto;
+            width: 50%;
+            border: 3px solid black;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .details {
+            margin: 20px;
+            padding: 10px;
+            background-color: grey;
+            border-box: 20px;
+        }
+    
+    .output {
+        margin: auto;
+        width: 50%;
+        height: 200px;
+        background-color: white;
+        border: 3px solid red;
+        padding: 10px;
+        overflow: auto;
+    }
+
+    </style>
+</head>
+<body>
+
+    <h1 class="title">Local Search Algorithm</h1>
+
+    <div class="content" id="container">
+        <!--main grid will be displayed here-->
+
+    </div>
+
+    <div class="details" id="details">
+    <!-- user values to change size of board and algorithm details -->
+    
+    Board Height: <input id="bheight" type="text" value="20" onchange="updateBoard()"></input>
+    Board Width: <input id="bwidth" type="text" value="20" onchange="updateBoard()"></input><br>
+    Inner-loop trials: <input id="inner-trials" type="text" value="10" onchange="updateBoard()"></input>
+    Path Length: <input id="length" type="text" value=""></input>
+    
+    <br><br>
+    <button id="compute" onclick="Begin()">Compute</button>
+    <button id="generate" onclick="generateObstacles()">Generate Obstacles</button>
+    <button id="search" onclick="localSearch()">Search for improvement</button>
+    <br>
+    
+    </div>
+    
+    
+    <div class="output" id="output">
+    <!-- output values for debugging -->
+    
+    <p>Output displayed here</p>
+    
+    </div>
+    
+</body>
+
+<script>
+
+	// JavaScript source code
+
+//global variables
+var tiles = [];
+var HEIGHT = 20;
+var WIDTH = 20;
+var BUTTONSIZE = "15px";
+var INNER_TRIALS = 10;
+var InitialPathAttempts = 0;
+var SuccessChanges = 0;
+var failedChanges = 0;
+var DIRECTIONS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+var OPEN_PATH = [];
+var newPathChunk = [];
+var bNewRouteFound = false;
+var bPathFound = false;
+var HighestIndex = 0;
+
+var start, end;
+
+//local search variables
+var FINAL_PATH = [];
+var PATH_LENGTH = 0;
+
+//user variables
+var bMouseDown = false;
+var ComBtn, searchBtn;
+
+//check to see if mouse is currently clicked down for selecting buttons
+document.onmousedown = function()
+{
+    bMouseDown = true;
+}
+document.onmouseup = function()
+{
+    bMouseDown = false;
+}
+
+//creates buttons and assigns delegate function for onclick
+function createButton(context, x, y)
+{
+    var button = document.createElement("input");
+    button.type = "button";
+    button.value = y + "," + x;
+    button.name = "path";
+    button.style.background = "gray";
+    button.addEventListener("click", function () { changeColor(button) });
+    context.appendChild(button);
+    button.style.height = BUTTONSIZE;
+    button.style.width = BUTTONSIZE;
+
+    tiles.push(button);
+    
+    if (isGoalNode(button))
+    {
+        button.disabled = true;
+        button.style.background = "green";
+    }
+}
+
+//changes button color and name
+//path == available route
+//block == obstruction
+function changeColor(button)
+{
+    if (button.name == "path")
+    {
+        button.name = "block";
+        button.style.background = "red";
+        
+    }
+    else
+    {
+        button.name = "path";
+        button.style.background = "grey";
+        
+    }
+    
+    var coor = getButtonCoor(button.value);
+    
+    printstring(coor.toString() + " - " + button.name);
+
+    
+}
+
+function generateObstacles()
+{
+	var btn = document.getElementById("generate");
+	btn.disabled = true;
+	for (var i = 0; i<WIDTH; i++)
+	{
+        if (i%2 == 0)
+        {
+            changeColor(getNodeFromString("10,"+i));
+        }
+		
+	
+	}
+
+	for (var i = 0; i < HEIGHT; i++)
+	{
+        if (i %3 ==0)
+		  changeColor(getNodeFromString(i+",10"));
+	}
+}
+
+//takes the value from the button and converts to 1-D num array
+//must pass button.value
+function getButtonCoor(str)
+{
+    //converts button value to array of x & y  coordinates
+    var coor = str.split(",");
+    
+    return coor;
+}
+
+function getCoorStringValue(coor)
+{
+    var str = coor[0].toString() + "," + coor[1].toString();
+    return str;
+}
+
+//marks the start and end nodes while creating the buttons
+//preventing the user from changing them with click events
+function isGoalNode(button)
+{
+    var coor = getButtonCoor(button.value);
+    if (Number(coor[0]) == (HEIGHT - 1) && Number(coor[1]) == 0)
+    {
+        button.name = "start";
+        start = button;
+        return true;
+    }
+    
+    else if (coor[0] == 0 && coor[1] == (WIDTH - 1))
+    {
+        button.name = "end";
+        end = button;
+        return true;
+    }
+}
+
+//locates next node from current
+//n, ne, e, se, s, sw, w, nw string values
+function getNextNode(numstr, dir)
+{
+    var num = Number(numstr);
+    var indexstr = getButtonCoor(numstr);
+    var nextIndex = [];
+    nextIndex[0] = Number(indexstr[0]);
+    nextIndex[1] = Number(indexstr[1]);
+    
+    if (dir == "n")
+    {
+        nextIndex[0] -= 1;
+    }
+    else if (dir == "s")
+    {
+        nextIndex[0] += 1;
+    }
+    else if (dir == "w")
+    {
+        nextIndex[1] -= 1;
+    }
+    else if (dir == "e")
+    {
+        nextIndex[1] += 1;
+    }
+    else if (dir == "ne")
+    {
+        nextIndex[0] -= 1;
+        nextIndex[1] += 1;
+    }
+    else if (dir == "nw")
+    {
+        nextIndex[0] -= 1;
+        nextIndex[1] -= 1;
+    }
+    else if (dir == "se")
+    {
+        nextIndex[0] += 1;
+        nextIndex[1] += 1;
+    }
+    else if (dir == "sw")
+    {
+        nextIndex[0] += 1;
+        nextIndex[1] -= 1;
+    }
+    
+    //check to see if new index is valid
+    if (nextIndex[0] < 0 || nextIndex[0] > HEIGHT-1 || nextIndex[1] < 0 || nextIndex[1] > WIDTH-1)
+    {
+        return null;
+    }
+    
+    //convert array back to number to associate with element in array
+    var newNumStr = getCoorStringValue(nextIndex);
+    
+    //get tile from array matching new index
+    for (var i = 0; i < tiles.length; i++)
+    {
+        if (tiles[i].value.valueOf() == newNumStr.valueOf())
+        {
+            //printstring("tile returned: " + tiles[i].value);
+            return tiles[i];
+        }
+    }
+}
+
+
+//builds board and stores buttons into array
+function createBoard()
+{
+    //grab all values from user before creating board
+    var container = document.getElementById("container");
+    tiles = [];
+    InitialPathAttempts = 0;
+    
+    for (var y = 0; y < HEIGHT; y++)
+    {
+        var row = document.createElement("div");
+        row.className = "row";
+        for (var x = 0; x < WIDTH; x++)
+        {
+            var tile = createButton(row, x, y);
+            
+        }
+        container.appendChild(row);
+    }
+    
+    printstring("board created");
+}
+
+//updates user variables from user fields and resets board
+function updateBoard()
+{
+    //remove all elements on board
+    var node = document.getElementById("container");
+    while (node.firstChild)
+    {
+        node.removeChild(node.firstChild);
+    }
+    
+    //update global variables from user values
+    HEIGHT = document.getElementById("bheight").value;
+    WIDTH = document.getElementById("bwidth").value;
+    INNER_TRIALS = document.getElementById("inner-trials").value;
+    
+    createBoard();
+}
+
+//returns an index from the given path of the object that is closest to the goal
+function findClosestPointToGoal(path)
+{
+	if (path != undefined)
+	{
+		var distance = 0;
+	    var index = 0;
+	    var endCoor = getButtonCoor(end.value);
+	    for (var i = 0; i < path.length; i++)
+	    {
+	        var coor = getButtonCoor(path[i].value);
+	        var size = 0;
+	        size += Math.pow(coor[0] - endCoor[0], 2);
+	        size += Math.pow(coor[1] - endCoor[1], 2);
+	        size = Math.sqrt(size);
+	        
+	        if (i == 0)
+	            distance = size;
+	        else if (size < distance)
+	        {
+	            distance = size;
+	            index = i;
+	        }
+	        
+	    }
+	    //printstring(distance);
+	    return index;
+	}
+	else
+	{
+		return 0;
+	}
+    
+}
+
+function shuffle(array)
+{
+	var currentIndex = 0, temporaryValue, randomIndex;
+
+  // While there remain elements to shuffle...
+  while (currentIndex < array.length) {
+
+    // Pick a remaining element...
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex++;
+
+    // And swap it with the current element.
+    temporaryValue = array[currentIndex];
+    array[currentIndex] = array[randomIndex];
+    array[randomIndex] = temporaryValue;
+  }
+
+  return array;
+}
+
+function getRandomPointinPath(path)
+{
+    return Math.floor(Math.random() * path.length);
+}
+
+//this function will get the best new point to try searching from
+//determined by the number of empty spaces around the nodes
+//returning index of array element instead
+function getNewPathStartingPoint(path)
+{
+	var randomNodes = [];
+	var freeNodes = 0;
+
+	//grab x number of random points from constructed path
+	for (var i = 0; i < INNER_TRIALS; i++)
+	{
+		randomNodes.push(OPEN_PATH[getRandomPointinPath(OPEN_PATH)]);
+	}
+
+	var currentNode = randomNodes[0];
+	var LuckyNode = randomNodes[0];
+
+	for (var i = 0; i < randomNodes.length; i++)
+	{
+		var neighbors = getSurroundNodes(randomNodes[i]);
+		
+
+		//make our lucky node the node with the most free neighbors available
+		if (i == 0)
+			freeNodes = neighbors.length;
+		else if (neighbors.length > freeNodes)
+			LuckyNode = i;
+	}
+
+	return LuckyNode;
+
+}
+
+function getSurroundNodes(node)
+{
+	var neighbors = [];
+	for (var i = 0; i < DIRECTIONS.length; i++)
+	{
+		var newNode = getNextNode(node.value, DIRECTIONS[i]); 
+		if (newNode != null)
+		{
+			if (!(isInPath(OPEN_PATH, newNode) || isBlock(newNode)))
+				neighbors.push(newNode);
+		}
+		
+	}
+
+	return neighbors;
+}
+
+function getSurroundPath(node)
+{
+    var neighbors = [];
+    for (var i = 0; i < DIRECTIONS.length; i++)
+    {
+        var newNode = getNextNode(node.value, DIRECTIONS[i]); 
+        if (newNode != null)
+        {
+            if (!isBlock(newNode) && isInPath(OPEN_PATH, newNode))
+                neighbors.push(newNode);
+        }
+        
+    }
+
+    return neighbors;
+}
+
+//adds unique elements to our final array
+//keeping track of available spaces
+function addNodetoPath(node)
+{
+	if (node != undefined)
+	{
+		if (OPEN_PATH.indexOf(node) === -1)
+		{
+            OPEN_PATH.push(node);
+            if (node.name.valueOf() == "start")
+                node.style.background = "green";
+            else
+                node.style.background = "orange";
+		}
+	}
+	
+}
+
+function removeNodeFromPath(node)
+{
+    if (node != null)
+    {
+        node.style.background = "gray";
+    }
+}
+
+function getPathElementIndex(node)
+{
+    for (var i = 0; i < OPEN_PATH.length; i++)
+    {
+        if (OPEN_PATH[i].value.valueOf() == node.value.valueOf())
+            return i;
+    }
+
+    return -1;
+}
+
+
+//first path finding function to test if available path exists
+function findPathToEnd(startNode)
+{
+
+	if (startNode != null && !bPathFound)
+	{
+        InitialPathAttempts++;
+		var current = startNode;
+		if (current.name.valueOf() == "end")
+		{
+			onPathFound();
+		}
+		else if (current.name.valueOf() == "path" || current.name.valueOf() == "start")
+		{
+			addNodetoPath(current);
+
+
+			//get all neighbor nodes and recusively call this function
+			var neighbors = getSurroundNodes(current);
+			for (var i = 0; i < neighbors.length; i++)
+			{
+				findPathToEnd(neighbors[i]);
+			}
+
+		}
+	}
+	else 
+	{
+		//debug messages
+		//printstring("Warning: undefined node / path already found: x= " + InitialPathAttempts);
+	}
+}
+
+//*******************************************************
+//local search main function
+
+
+function localSearch()
+{
+    //refines path through multiple neighbor nodes
+    for (var i = 0; i < INNER_TRIALS; i++)
+    {
+        determineRoute();
+        displayStats();
+
+    }
+    
+    
+    //eliminates non-linear routes through board
+    for (var x = 0; x < INNER_TRIALS; x++)
+    {
+        //search for improvements in a straight line
+        for (var i = 0; i < PATH_LENGTH; i++)
+        {
+            straightLineImprovement(i);
+            displayStats();
+        }
+    }
+    
+	
+    displayStats();
+
+}
+
+//find best route through multiple nodes
+//if multiple adjacent path nodes beside current, choose one with highest index
+function determineRoute()
+{
+    for (var i = 0; i < OPEN_PATH.length; i++)
+    {
+        var previous;
+
+        if (i > 0)
+            previous = OPEN_PATH[i-1];
+
+        if (i > HighestIndex)
+            HighestIndex = i;
+
+        var current = OPEN_PATH[i];
+        var neighbors = getSurroundPath(current);
+        var path = [];
+        
+        var nextNode;
+        var nextIndex = 0;
+        var lastIndex = 0;
+        //remove previous from neighbors if applicable
+        if (previous != null)
+        {
+            for (var x = 0; x < neighbors.length; x++)
+            {
+                if (previous.value.valueOf() == neighbors[x].value.valueOf())
+                {
+                    neighbors.splice(x, 1);
+                    printstring("previous element removed from neighbors");
+                }
+            }
+        }
+
+        if (neighbors.length > 1)
+        {
+            printstring("found two adjacent elements.");
+
+            for (var x = 0; x < neighbors.length; x++)
+            {
+                if (getPathElementIndex(neighbors[x]) > nextIndex)
+                {
+                    nextNode = neighbors[x];
+                    nextIndex = getPathElementIndex(neighbors[x]);
+                }
+            }
+
+            nextIndex = getPathElementIndex(nextNode);
+            lastIndex = i;
+
+            refinePath(lastIndex, nextIndex);
+            break;
+
+        }
+        else
+        {
+            printstring("only 1 neighbor or less in array. moving onto next element");
+            path.push(nextNode);
+        }
+
+        
+    }
+}
+
+
+function straightLineImprovement(index)
+{
+    //create temporary path to test if is better route
+        var start = OPEN_PATH[index];
+        var target = OPEN_PATH[Math.floor(Math.random() * (OPEN_PATH.length - index) + index)];
+        var bContinue = true;
+        var path = [];
+        path.push(start);
+
+        for (var x = 0; x < OPEN_PATH.length; x++)
+        {
+            var current = path[path.length-1];
+            var dir = getDirectionToNode(current, target);
+            var temp = getNextNode(current.value, dir);
+            if (temp != null)
+            {
+                if (isInPath(OPEN_PATH, temp))
+                {
+                    //build new path and compare distances
+                    path.push(temp);
+                    compareDistance(path);
+                    break;
+                }
+                else if (!isBlock(temp))
+                {
+                    path.push(temp);
+                }
+                else
+                {
+                    printstring("obstruction blocking path: " + temp.value);
+                    printstring("------------------------------")
+
+                    failedChanges++;
+                    break;
+                }
+            }
+            else
+            {
+                printstring("temp is null");
+                failedChanges++;
+                break;
+            }
+            
+        }
+
+        /*display contents of path
+        for (var z = 0; z < path.length; z++)
+        {
+            printstring(path[z].value);
+        }
+        */
+}
+
+function compareDistance(newpath)
+{
+    var begin = newpath[0];
+    var target = newpath[newpath.length-1];
+    var breakIndex = 0;
+    var startIndex = 0;
+    var startingNodes = [];
+
+    if (newpath[0].name.valueOf() != "start")
+    {
+
+        for (var i = 0; i < OPEN_PATH.length; i++)
+        {
+            if (OPEN_PATH[i].value.valueOf() != newpath[0].value.valueOf())
+                startingNodes.push(OPEN_PATH[i]);
+            else
+            {
+                startIndex = i;
+                break;
+            }
+        }
+    }
+
+    var oldpath = [];
+    for (i = 0; i < OPEN_PATH.length; i++)
+    {
+        if (i < OPEN_PATH.length)
+        {
+            if (OPEN_PATH[i].value.valueOf() != target.value.valueOf())
+            {
+                oldpath.push(OPEN_PATH[i]);
+            }
+            else
+            {
+                oldpath.push(OPEN_PATH[i]);
+                breakIndex = i;
+                break;
+            }
+        }
+        else
+        {
+            printstring("loop has gone past OPEN_PATH length");
+            break;
+        }
+        
+    }
+
+    var finalPath = [];
+
+    //combine paths together for final comparison
+    if (startingNodes.length > 0)
+    {
+        finalPath = startingNodes;
+        for (var i = 0; i < newpath.length; i++)
+        {
+            finalPath.push(newpath[i]);
+        }
+    }
+    else
+    {
+        finalPath = newpath;
+    }
+
+    if (calculatePathDistance(oldpath, finalPath))
+    {
+        printstring("new path is shorter. constructing new path");
+        //rebuild path
+        rebuildPath(startIndex, breakIndex, newpath);
+
+        //inciment successful changes
+        SuccessChanges++;
+    }
+    else
+    {
+        printstring("old path is still shorter");
+        failedChanges++;
+    }
+}
+
+
+//calculate distance of new path generated
+//return true if new path is shorter
+function calculatePathDistance(oldpath, newpath)
+{
+    return newpath.length < oldpath.length;
+}
+
+function refinePath(breakIndex, startIndex)
+{
+    var path = [];
+
+    for (var i = 0; i <= breakIndex; i++)
+    {
+        path.push(OPEN_PATH[i]);
+    }
+
+    for (var i = startIndex; i < OPEN_PATH.length; i++)
+    {
+        path.push(OPEN_PATH[i]);
+    }
+
+    //delete old path
+    for (var i = 0; i < OPEN_PATH.length; i++)
+    {
+        removeNodeFromPath(OPEN_PATH[i]);
+    }
+    OPEN_PATH = [];
+
+    for (var i = 0; i < path.length; i++)
+    {
+        addNodetoPath(path[i]);
+    }
+
+    SuccessChanges++;
+}
+
+function rebuildPath(startIndex, breakIndex, newpath)
+{
+    var path = [];
+    // add original path first if applicable
+    if (startIndex > 0)
+    {
+        for (var i = 0; i < startIndex; i++)
+        {
+            path.push(OPEN_PATH[i]);
+        }
+    }
+    //add newpath to beginning
+    for (var i = 0; i < newpath.length; i++)
+    {
+        path.push(newpath[i]);
+    }
+    //add rest of nodes from old path
+    for (var i = breakIndex+1; i < OPEN_PATH.length; i++)
+    {
+        path.push(OPEN_PATH[i]);
+    }
+
+    //delete old path
+    for (var i = 0; i < OPEN_PATH.length; i++)
+    {
+        removeNodeFromPath(OPEN_PATH[i]);
+    }
+    OPEN_PATH = [];
+
+    //add new path to global variable
+    for (var i = 0; i < path.length; i++)
+    {
+        addNodetoPath(path[i]);
+    }
+}
+
+function displayStats()
+{
+    //set new path length
+    PATH_LENGTH = OPEN_PATH.length;
+
+    document.getElementById("length").value = PATH_LENGTH;
+
+    printstring("-----------------------");
+    printstring("Failed Changes: " + failedChanges);
+    printstring("Successful changes: " + SuccessChanges);
+}
+
+
+//*******************************************************
+
+//get direction relative to currently selected node
+function getDirectionToNode(node, target)
+{
+    if (node != undefined && target != undefined)
+    {
+        var nodeCoor = getButtonCoor(node.value);
+        var endCoor = getButtonCoor(target.value);
+
+        var dir = "n";
+        var up = endCoor[0] - nodeCoor[0];
+        var right = endCoor[1] - nodeCoor[1];
+
+        if (up < 0 && right == 0)
+            dir = "n";
+        if (up > 0 && right == 0)
+            dir = "s";
+        if (up == 0 && right > 0)
+            dir = "e";
+        if (up == 0 && right < 0)
+            dir = "w";
+        if (up < 0 && right > 0)
+            dir = "ne";
+        if (up < 0 && right < 0)
+            dir = "nw";
+        if (up > 0 && right > 0)
+            dir = "se";
+        if (up > 0 && right < 0)
+            dir = "sw";
+
+        return dir;
+    }
+    
+}
+
+
+function onPathFound()
+{
+    if (!bPathFound)
+    {
+        printstring("**************************************");
+        printstring("**END FOUND** on " + InitialPathAttempts + " iterations");
+        printstring("**************************************");
+        bPathFound = true;
+
+        searchBtn.disabled = false;
+
+        PATH_LENGTH = OPEN_PATH.length;
+    }
+	
+}
+
+                        
+function isInPath(path, node)
+{
+    var bReturn = false;
+    //chcek to see if next node is in path already
+    for (var i = 0; i < path.length; i++)
+    {
+        if (path[i].value.valueOf() == node.value.valueOf())
+            bReturn = true;
+    }
+    
+    return bReturn;
+}
+
+function isBlock(node)
+{
+    return node.name.valueOf() == "block";
+}
+
+function getNextDirection(current)
+{
+    
+    return DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
+}
+
+function getNode(index)
+{
+    for (var i = 0; i < tiles.length; i++)
+    {
+        if (Number(tiles[i]) == Number(index))
+            return tiles[i];
+    }
+}
+
+function getNodeFromString(str)
+{
+	for (var i = 0; i < tiles.length; i++)
+	{
+		if (tiles[i].value.valueOf() == str.valueOf())
+			return tiles[i];
+	}
+}
+
+
+function Begin()
+{
+    disableTiles();
+
+    printstring("");
+    printstring("Local Search Button available when path is found");
+    printstring("");
+
+    findPathToEnd(start);
+
+}
+
+
+//prevents user from clicking on board during algorithm
+function disableTiles()
+{
+    for (var i = 0; i < tiles.length; i++)
+    {
+        tiles[i].disabled = true;
+    }
+}
+
+//displays messages along the bottom pane of the page
+function printstring(string)
+{
+    var node = document.createTextNode(string);
+    var br = document.createElement("br");
+    var x = document.getElementById("output");
+    
+    x.insertBefore(br, x.childNodes[0]);
+    x.insertBefore(node, x.childNodes[0]);
+}
+
+function sleep(milliseconds)
+{
+    var start = new Date().getTime();
+    for (var i = 0; i < 1e7; i++)
+        if (new Date().getTime() - start > milliseconds)
+            break;
+}
+
+
+//--------------------------------------------------
+//init function to create buttons and load output
+window.onload = function()
+{
+    createBoard();
+    
+    printstring("***PLACE OBSTRUCTIONS NOW****");
+    printstring("***press COMPUTE when ready****");
+    
+    //initiate buttons
+    ComBtn = document.getElementById("compute");
+    searchBtn = document.getElementById("search");
+
+    searchBtn.disabled = true;
+}
+
+
+	</script>
+</html>
